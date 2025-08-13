@@ -1,4 +1,12 @@
-// This file will export middleware as the application grows
+const { auth, requireAdmin } = require('./auth');
+const validate = require('./validate');
+const { notFound, errorHandler } = require('./error');
+
+// This file exports middleware for convenience
 module.exports = {
-  // Add your middleware here
+  auth,
+  requireAdmin,
+  validate,
+  notFound,
+  errorHandler,
 };
