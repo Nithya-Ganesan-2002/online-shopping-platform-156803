@@ -4,33 +4,59 @@ const mongoose = require('mongoose');
  * PUBLIC_INTERFACE
  * connectDB
  * Connect to MongoDB using Mongoose and the MONGO_URI environment variable.
- * Throws an error if the connection fails or if MONGO_URI is not provided.
+ * - If MONGO_URI is missing or the connection fails, and ALLOW_NO_DB=true (or NODE_ENV=test),
+ *   the function will log a warning and resolve without throwing, allowing the app to start
+ *   without a database connection (useful for CI or health checks).
+ * - Otherwise, it throws an error to prevent the server from starting in a bad state.
+ *
+ * Returns the mongoose instance when connected successfully, or null when DB is intentionally skipped.
  */
 async function connectDB() {
   const uri = process.env.MONGO_URI;
-  if (!uri) {
-    throw new Error('MONGO_URI is not set. Please configure it in your environment variables.');
-  }
+  const allowNoDb =
+    String(process.env.ALLOW_NO_DB || '').toLowerCase() === 'true' ||
+    process.env.NODE_ENV === 'test';
 
   // Mongoose recommended options
   mongoose.set('strictQuery', true);
 
-  await mongoose.connect(uri, {
-    autoIndex: true,
-  });
+  if (!uri) {
+    const msg =
+      'MONGO_URI is not set. Please configure it in your environment variables.';
+    if (allowNoDb) {
+      console.warn(`${msg} Starting without a database connection because ALLOW_NO_DB is enabled.`);
+      return null;
+    }
+    throw new Error(msg);
+  }
 
-  // Connection events logging
-  mongoose.connection.on('connected', () => {
-    console.log('MongoDB connected');
-  });
-  mongoose.connection.on('error', (err) => {
-    console.error('MongoDB connection error:', err.message);
-  });
-  mongoose.connection.on('disconnected', () => {
-    console.warn('MongoDB disconnected');
-  });
+  try {
+    await mongoose.connect(uri, {
+      autoIndex: true,
+    });
 
-  return mongoose;
+    // Connection events logging
+    mongoose.connection.on('connected', () => {
+      console.log('MongoDB connected');
+    });
+    mongoose.connection.on('error', (err) => {
+      console.error('MongoDB connection error:', err.message);
+    });
+    mongoose.connection.on('disconnected', () => {
+      console.warn('MongoDB disconnected');
+    });
+
+    return mongoose;
+  } catch (err) {
+    if (allowNoDb) {
+      console.warn(
+        `MongoDB connection failed: ${err.message}. Continuing without DB because ALLOW_NO_DB is enabled.`
+      );
+      return null;
+    }
+    // Re-throw to be handled by the caller (server will exit)
+    throw err;
+  }
 }
 
 module.exports = {
